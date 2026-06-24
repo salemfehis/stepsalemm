@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import math
@@ -916,15 +917,45 @@ elif section == "4 · Traitement biologique":
         Shu_b36=Sh_b36/N_bio; Shu_b56=Sh_b56/N_bio
         L_b36=math.sqrt(2*Shu_b36); L_b56=math.sqrt(2*Shu_b56)
         l_b36=L_b36/2; l_b56=L_b56/2
+        # Largeur commune exportée vers anoxie + aération
+        largeur_commune_2036 = l_b36
+        largeur_commune_2056 = l_b56
+
+        # Débits horaires pour Ts
+        Qmoy_h_2036 = Q_2036 / 24          # m³/h
+        Qmoy_h_2056 = Q_2056 / 24
+        _, Qpts_s_2036, _ = qp(T10[2])
+        _, Qpts_s_2056, _ = qp(T30[2])
+        Qpts_h_2036 = Qpts_s_2036 * 3600   # m³/h
+        Qpts_h_2056 = Qpts_s_2056 * 3600
+        Qptp_h_2036 = Qptp10[1]            # m³/h
+        Qptp_h_2056 = Qptp30[1]
+
+        # Ts unitaire (h) → convertir en min
+        def ts_min(Vu, Q_h):
+            return round((Vu / Q_h) * 60, 1) if Q_h > 0 else 0
 
         df_bassin = pd.DataFrame({
             "Paramètre": ["Volume total (m³)","Volume unitaire (m³)",
                           "Surface totale (m²)","Surface unitaire (m²)",
-                          "Longueur L (m)","Largeur l (m)"],
-            "2036": [round(V_bio2036,2),round(Vu_b36,2),round(Sh_b36,2),round(Shu_b36,2),round(L_b36,2),round(l_b36,2)],
-            "2056": [round(V_bio2056,2),round(Vu_b56,2),round(Sh_b56,2),round(Shu_b56,2),round(L_b56,2),round(l_b56,2)],
+                          "Longueur L (m)","Largeur l (m)",
+                          "Ts – Qmoy (min)","Ts – Qpts (min)","Ts – Qptp (min)"],
+            "2036": [round(V_bio2036,2), round(Vu_b36,2), round(Sh_b36,2), round(Shu_b36,2),
+                     round(L_b36,2), round(l_b36,2),
+                     ts_min(Vu_b36, Qmoy_h_2036), ts_min(Vu_b36, Qpts_h_2036), ts_min(Vu_b36, Qptp_h_2036)],
+            "2056": [round(V_bio2056,2), round(Vu_b56,2), round(Sh_b56,2), round(Shu_b56,2),
+                     round(L_b56,2), round(l_b56,2),
+                     ts_min(Vu_b56, Qmoy_h_2056), ts_min(Vu_b56, Qpts_h_2056), ts_min(Vu_b56, Qptp_h_2056)],
         })
         st.dataframe(df_bassin, use_container_width=True, hide_index=True)
+
+        # Vérification Ts normatif
+        ts_check_36 = ts_min(Vu_b36, Qmoy_h_2036)
+        ts_check_56 = ts_min(Vu_b56, Qmoy_h_2056)
+        if ts_check_36 >= 180 and ts_check_56 >= 180:
+            st.success("✔ Ts ≥ 3h (normatif) pour les deux horizons")
+        else:
+            st.warning(f"⚠️ Vérifier Ts : 2036 = {ts_check_36} min | 2056 = {ts_check_56} min (recommandé ≥ 180 min)")
 
     # ---- BASSIN ANOXIE ----
     with tab2:
@@ -944,23 +975,27 @@ elif section == "4 · Traitement biologique":
         if NTK == 0 or Nd_anox <= 0:
             st.info("ℹ️ NTK = 0 ou pas de dénitrification nécessaire — pas de bassin d'anoxie requis.")
         else:
-            Va_j_anox = (Va_anox * 24) / 1000
+            Va_j_anox  = (Va_anox * 24) / 1000
             Vanox_calc = max(Nd_anox / (Va_j_anox * CMVS_anox), 0) if CMVS_anox > 0 else 0
-            Vu_anox  = Vanox_calc / N_anox
-            Sh_anox  = Vanox_calc / H_anox
-            Shu_anox = Sh_anox / N_anox
-            L_anox   = Shu_anox / l_anox
+            Vu_anox    = Vanox_calc / N_anox  if N_anox > 0 else 0
+            Sh_anox    = Vanox_calc / H_anox  if H_anox > 0 else 0
+            Shu_anox   = Sh_anox    / N_anox  if N_anox > 0 else 0
+            # largeur = même que bassin bio | longueur = Shu / l
+            l_anox_cal = largeur_commune_2036 if horizon_anox == "2036" else largeur_commune_2056
+            L_anox     = Shu_anox / l_anox_cal if l_anox_cal > 0 else 0
 
             df_anox = pd.DataFrame({
                 "Paramètre": ["N dénitrifié (kg/j)","CMVS (kg/m³)","Va (g/kg/h)",
                               "Volume total (m³)","Volume unitaire (m³)",
-                              "Surface totale (m²)","Surface unitaire (m²)","Longueur (m)"],
+                              "Surface totale (m²)","Surface unitaire (m²)",
+                              "Longueur L (m)","Largeur l (m)"],
                 "Valeur": [round(Nd_anox,2), round(CMVS_anox,2), Va_anox,
                            round(Vanox_calc,2), round(Vu_anox,2),
-                           round(Sh_anox,2), round(Shu_anox,2), round(L_anox,2)]
+                           round(Sh_anox,2),   round(Shu_anox,2),
+                           round(L_anox,2),    round(l_anox_cal,2)]
             })
             st.dataframe(df_anox, use_container_width=True, hide_index=True)
-            st.success(f"✔ Volume anoxique = {Vanox_calc:.2f} m³")
+            st.success(f"✔ Volume anoxique = {Vanox_calc:.2f} m³ | L = {L_anox:.2f} m | l = {l_anox_cal:.2f} m")
 
     # ---- BASSIN AÉRATION ----
     with tab3:
@@ -970,7 +1005,6 @@ elif section == "4 · Traitement biologique":
             H_aer  = st.slider("Hauteur H (m)", 3.0, 5.0, 5.0, key="H_aer2")
             N_aer  = st.number_input("Nombre de bassins", value=2, key="N_aer2")
         with c2:
-            l_aer  = st.number_input("Largeur (m)", value=5.0, key="l_aer2")
             h_aer2 = st.selectbox("Horizon", ["2036", "2056"], key="hz_aer")
 
         V_bio_sel  = V_bio_2036 if h_aer2 == "2036" else V_bio_2056
@@ -979,7 +1013,6 @@ elif section == "4 · Traitement biologique":
         Va_j2      = (Va_default * 24) / 1000
 
         if NTK == 0 or Nd_aer <= 0:
-            # بدون أنوكسي — كل الحجم البيولوجي = aération
             V_anox_aer = 0
             V_aer_calc = max(V_bio_sel, 0)
             sans_anoxie = True
@@ -988,27 +1021,31 @@ elif section == "4 · Traitement biologique":
             V_aer_calc = max(V_bio_sel - V_anox_aer, 0)
             sans_anoxie = False
 
-        Vu_aer2  = V_aer_calc / N_aer if N_aer > 0 else 0
-        Sh_aer2  = V_aer_calc / H_aer if H_aer > 0 else 0
-        Shu_aer2 = Sh_aer2 / N_aer if N_aer > 0 else 0
-        L_aer2   = Shu_aer2 / l_aer if l_aer > 0 else 0
+        Vu_aer2  = V_aer_calc / N_aer  if N_aer  > 0 else 0
+        Sh_aer2  = V_aer_calc / H_aer  if H_aer  > 0 else 0
+        Shu_aer2 = Sh_aer2    / N_aer  if N_aer  > 0 else 0
+        # largeur = même que bassin bio | longueur = Shu / l
+        l_aer2   = largeur_commune_2036 if h_aer2 == "2036" else largeur_commune_2056
+        L_aer2   = Shu_aer2 / l_aer2 if l_aer2 > 0 else 0
 
         if sans_anoxie:
             st.info("ℹ️ NTK = 0 : pas d'anoxie — le bassin d'aération = bassin biologique complet.")
             df_aer2 = pd.DataFrame({
                 "Paramètre": ["Volume biologique = Volume aération (m³)",
                               "Volume unitaire (m³)","Surface totale (m²)",
-                              "Surface unitaire (m²)","Longueur (m)"],
+                              "Surface unitaire (m²)","Longueur L (m)","Largeur l (m)"],
                 "Valeur": [round(V_aer_calc,2), round(Vu_aer2,2),
-                           round(Sh_aer2,2), round(Shu_aer2,2), round(L_aer2,2)]
+                           round(Sh_aer2,2), round(Shu_aer2,2),
+                           round(L_aer2,2),  round(l_aer2,2)]
             })
         else:
             df_aer2 = pd.DataFrame({
                 "Paramètre": ["Volume bio (m³)","Volume anoxique (m³)","Volume aération (m³)",
                               "Volume unitaire (m³)","Surface totale (m²)",
-                              "Surface unitaire (m²)","Longueur (m)"],
+                              "Surface unitaire (m²)","Longueur L (m)","Largeur l (m)"],
                 "Valeur": [round(V_bio_sel,2), round(V_anox_aer,2), round(V_aer_calc,2),
-                           round(Vu_aer2,2), round(Sh_aer2,2), round(Shu_aer2,2), round(L_aer2,2)]
+                           round(Vu_aer2,2),   round(Sh_aer2,2),   round(Shu_aer2,2),
+                           round(L_aer2,2),    round(l_aer2,2)]
             })
         st.dataframe(df_aer2, use_container_width=True, hide_index=True)
 
